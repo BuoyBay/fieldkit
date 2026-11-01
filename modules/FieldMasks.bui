@@ -1,0 +1,108 @@
+Import MaskKit
+
+Public Class MaskEditor
+    Private Property mMask As TextMask
+    Private Property mSlots As Array Of Integer = []
+    Private Property mRaw As String
+    Private Property mText As String
+    Private Property mComplete As Boolean
+    Public Sub Constructor(pattern As String)
+        mMask = New TextMask(pattern)
+        Dim chars As Array Of String = String.Chars(pattern)
+        Dim index As Integer = 0
+        Dim position As Integer = 0
+        While index < Array.Count(chars)
+            Dim ch As String = chars(index)
+            If ch = "\\" Then
+                index += 1
+            ElseIf ch = "#" Or String.Compare(ch, "L", True) = 0 Or String.Compare(ch, "l", True) = 0 Or String.Compare(ch, "A", True) = 0 Or ch = "*" Or ch = "." Then
+                Array.Append(mSlots, position)
+            End If
+            position += 1
+            index += 1
+        End While
+        Dim matched As MaskMatch = mMask.Format("")
+        mText = matched.Text
+        mComplete = matched.IsComplete
+    End Sub
+    Public Property RawText As String
+        Get
+            Return mRaw
+        End Get
+    End Property
+    Public Property Text As String
+        Get
+            Return mText
+        End Get
+    End Property
+    Public Property IsComplete As Boolean
+        Get
+            Return mComplete
+        End Get
+    End Property
+    Public Function RawOffset(formattedOffset As Integer) As Integer
+        If formattedOffset < 0 Or formattedOffset > String.Len(mText) Then Throw New InvalidArgumentException("Formatted offset outside text")
+        Dim count As Integer = 0
+        For Each position As Integer In mSlots
+            If position >= formattedOffset Or count = String.Len(mRaw) Then Exit For
+            count += 1
+        Next
+        Return count
+    End Function
+    Public Function FormattedOffset(rawOffset As Integer) As Integer
+        If rawOffset < 0 Or rawOffset > String.Len(mRaw) Then Throw New InvalidArgumentException("Raw offset outside text")
+        If rawOffset < Array.Count(mSlots) Then
+            If mSlots(rawOffset) < String.Len(mText) Then Return mSlots(rawOffset)
+        End If
+        Return String.Len(mText)
+    End Function
+    Private Function Extract(text As String) As String
+        Dim chars As Array Of String = String.Chars(text)
+        Dim pieces As Array Of String = []
+        For Each position As Integer In mSlots
+            If position >= Array.Count(chars) Then Exit For
+            Array.Append(pieces, chars(position))
+        Next
+        Return String.Join(pieces, "")
+    End Function
+    Private Function Slice(text As String, first As Integer, last As Integer) As String
+        Dim chars As Array Of String = String.Chars(text)
+        Dim pieces As Array Of String = []
+        For index As Integer = first To last - 1
+            Array.Append(pieces, chars(index))
+        Next
+        Return String.Join(pieces, "")
+    End Function
+    Public Function Replace(start As Integer, length As Integer, pasted As String, formatted As Boolean = False) As Integer
+        Dim first As Integer = Me.RawOffset(start)
+        If length < 0 Or length > String.Len(mText) - start Then Throw New InvalidArgumentException("Selection outside text")
+        Dim last As Integer = Me.RawOffset(start + length)
+        Dim insertion As String = pasted
+        If formatted Then
+            Dim parsed As MaskMatch = mMask.Match(pasted)
+            If Not parsed.IsValid Then Throw New InvalidArgumentException("Invalid formatted paste")
+            insertion = Me.Extract(parsed.Text)
+        End If
+        ' Reject overlong input before building an intermediate string.
+        If String.LenBytes(insertion) > 16384 Or String.Len(insertion) > 4096 Then Throw New InvalidArgumentException("Paste exceeds limit")
+        Dim raw As String = Me.Slice(mRaw, 0, first) + insertion + Me.Slice(mRaw, last, String.Len(mRaw))
+        Dim matched As MaskMatch = mMask.Format(raw)
+        If Not matched.IsValid Then Throw New InvalidArgumentException("Replacement violates mask")
+        mRaw = Me.Extract(matched.Text)
+        mText = matched.Text
+        mComplete = matched.IsComplete
+        Return Me.FormattedOffset(first + String.Len(insertion))
+    End Function
+    Public Function Backspace(caret As Integer) As Integer
+        Dim offset As Integer = Me.RawOffset(caret)
+        If offset = 0 Then Return caret
+        Dim first As Integer = Me.FormattedOffset(offset - 1)
+        Return Me.Replace(first, caret - first, "")
+    End Function
+    Public Function DeleteForward(caret As Integer) As Integer
+        Dim offset As Integer = Me.RawOffset(caret)
+        If offset = String.Len(mRaw) Then Return caret
+        Dim last As Integer = Me.FormattedOffset(offset + 1)
+        Return Me.Replace(caret, last - caret, "")
+    End Function
+End Class

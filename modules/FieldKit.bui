@@ -1,0 +1,224 @@
+Public Enum FieldState
+    Empty
+    Incomplete
+    Invalid
+    Valid
+End Enum
+
+Public Class FieldAnalysis
+    Private Property mState As FieldState
+    Private Property mCandidate As Optional Of String
+    Private Property mError As String
+    Private Property mPosition As Integer
+    Public Sub Constructor(state As FieldState, candidate As Optional Of String, errorCode As String = "", errorPosition As Integer = -1)
+        If state <> FieldState.Empty And state <> FieldState.Incomplete And state <> FieldState.Invalid And state <> FieldState.Valid Then Throw New InvalidArgumentException("Unknown field state")
+        If (state = FieldState.Valid) <> candidate.HasValue Then Throw New InvalidArgumentException("Candidate must exist exactly when Valid")
+        If errorPosition < -1 Then Throw New InvalidArgumentException("Invalid error position")
+        mState = state
+        mCandidate = candidate
+        mError = errorCode
+        mPosition = errorPosition
+    End Sub
+    Public Property State As FieldState
+        Get
+            Return mState
+        End Get
+    End Property
+    Public Property Candidate As Optional Of String
+        Get
+            Return mCandidate
+        End Get
+    End Property
+    Public Property ErrorCode As String
+        Get
+            Return mError
+        End Get
+    End Property
+    Public Property ErrorPosition As Integer
+        Get
+            Return mPosition
+        End Get
+    End Property
+End Class
+
+Public Interface FieldCodec
+    Function Analyze(text As String, profile As String) As FieldAnalysis
+    Function FormatDisplay(canonical As String, profile As String) As String
+    Function FormatEdit(canonical As String, profile As String) As String
+End Interface
+
+Public Class EditSession
+    Private Property mCodec As FieldCodec
+    Private Property mNullable As Boolean
+    Private Property mValue As Optional Of String
+    Private Property mDraft As String
+    Private Property mInitial As String
+    Private Property mDisplay As String
+    Private Property mProfile As String
+    Private Property mEditing As Boolean
+    Private Property mAnalysis As FieldAnalysis
+    Public Sub Constructor(codec As FieldCodec, nullable As Boolean)
+        If codec Is Nil Then Throw New InvalidArgumentException("Codec is Nil")
+        mCodec = codec
+        mNullable = nullable
+        mValue = None
+        mAnalysis = New FieldAnalysis(FieldState.Empty, None)
+    End Sub
+    Public Property DraftText As String
+        Get
+            Return mDraft
+        End Get
+    End Property
+    Public Property CommittedValue As Optional Of String
+        Get
+            Return mValue
+        End Get
+    End Property
+    Public Property Candidate As Optional Of String
+        Get
+            Return mAnalysis.Candidate
+        End Get
+    End Property
+    Public Property Analysis As FieldAnalysis
+        Get
+            Return mAnalysis
+        End Get
+    End Property
+    Public Property State As FieldState
+        Get
+            Return mAnalysis.State
+        End Get
+    End Property
+    Public Property IsDirty As Boolean
+        Get
+            Return mEditing And String.Compare(mDraft, mInitial, True) <> 0
+        End Get
+    End Property
+    Public Property IsEditing As Boolean
+        Get
+            Return mEditing
+        End Get
+    End Property
+    Public Property EditProfile As String
+        Get
+            Return mProfile
+        End Get
+    End Property
+    Public Property DisplayText As String
+        Get
+            Return mDisplay
+        End Get
+    End Property
+    Private Function Examine(text As String) As FieldAnalysis
+        If text = "" Then Return New FieldAnalysis(FieldState.Empty, None)
+        Dim analysisValue As FieldAnalysis = mCodec.Analyze(text, mProfile)
+        If analysisValue Is Nil Then Throw New InvalidArgumentException("Codec returned Nil")
+        If analysisValue.State = FieldState.Empty Then Throw New InvalidArgumentException("Nonempty draft cannot be Empty")
+        Return analysisValue
+    End Function
+    Public Sub SetValue(value As Optional Of String, profile As String)
+        If Not value.HasValue And Not mNullable Then Throw New InvalidArgumentException("Required value cannot be None")
+        Dim display As String = ""
+        If value.HasValue Then display = mCodec.FormatDisplay(value.Value, profile)
+        mValue = value
+        mProfile = profile
+        mDisplay = display
+        mDraft = display
+        mInitial = display
+        mEditing = False
+        mAnalysis = New FieldAnalysis(FieldState.Empty, None)
+    End Sub
+    Public Sub BeginEdit(profile As String)
+        If mEditing Then Return
+        Dim draft As String = ""
+        If mValue.HasValue Then draft = mCodec.FormatEdit(mValue.Value, profile)
+        mProfile = profile
+        mDraft = draft
+        mInitial = draft
+        mEditing = True
+        ' Untouched values need not be parsed back from a possibly rounded display.
+        If mValue.HasValue Then
+            mAnalysis = New FieldAnalysis(FieldState.Valid, mValue)
+        Else
+            mAnalysis = New FieldAnalysis(FieldState.Empty, None)
+        End If
+    End Sub
+    Public Sub SetDraft(text As String)
+        If Not mEditing Then Throw New InvalidArgumentException("BeginEdit required")
+        If String.Compare(text, mDraft, True) = 0 Then Return
+        Dim analysisValue As FieldAnalysis = Me.Examine(text)
+        mDraft = text
+        mAnalysis = analysisValue
+    End Sub
+    Public Function TryCommit() As Boolean
+        If Not mEditing Then Throw New InvalidArgumentException("BeginEdit required")
+        Dim nextValue As Optional Of String = mValue
+        If Me.IsDirty Or Not mValue.HasValue Then
+            If mAnalysis.State = FieldState.Valid Then
+                nextValue = mAnalysis.Candidate
+            ElseIf mAnalysis.State = FieldState.Empty And mNullable Then
+                nextValue = None
+            Else
+                Return False
+            End If
+        End If
+        Dim display As String = ""
+        If nextValue.HasValue Then display = mCodec.FormatDisplay(nextValue.Value, mProfile)
+        mValue = nextValue
+        mDisplay = display
+        mEditing = False
+        mAnalysis = New FieldAnalysis(FieldState.Empty, None)
+        Return True
+    End Function
+    Public Sub CancelEdit()
+        mDraft = mDisplay
+        mInitial = mDraft
+        mEditing = False
+        mAnalysis = New FieldAnalysis(FieldState.Empty, None)
+    End Sub
+End Class
+
+Public Class CommitField Inherits TextField
+    Private Property mSession As EditSession
+    Public Property Profile As String
+    Event ValueCommitted()
+    Event CommitRejected()
+    Public Sub Constructor(codec As FieldCodec, nullable As Boolean)
+        Super.Constructor(FieldType.Normal)
+        mSession = New EditSession(codec, nullable)
+    End Sub
+    Public Property Session As EditSession
+        Get
+            Return mSession
+        End Get
+    End Property
+    Public Sub SetValue(value As Optional Of String)
+        mSession.SetValue(value, Me.Profile)
+        Me.Text = mSession.DisplayText
+    End Sub
+    Public Sub CancelEdit()
+        mSession.CancelEdit()
+        Me.Text = mSession.DisplayText
+    End Sub
+    Handle FocusGained()
+        If mSession Is Nil Then Return
+        mSession.BeginEdit(Me.Profile)
+        Me.Text = mSession.DraftText
+    End Handle
+    Handle TextChanged()
+        If mSession Is Nil Then Return
+        If Not mSession.IsEditing Then mSession.BeginEdit(Me.Profile)
+        mSession.SetDraft(Me.Text)
+    End Handle
+    Handle FocusLost()
+        If mSession Is Nil Then Return
+        If Not mSession.IsEditing Then Return
+        mSession.SetDraft(Me.Text)
+        If mSession.TryCommit() Then
+            Me.Text = mSession.DisplayText
+            RaiseEvent ValueCommitted()
+        Else
+            RaiseEvent CommitRejected()
+        End If
+    End Handle
+End Class
