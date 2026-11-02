@@ -1,1 +1,1 @@
-{"schema":1,"name":"fieldkit","version":"0.1.0","description":"Pure codec editing sessions, native commit-format fields and mask edit operations"}
+{"schema":1,"name":"fieldkit","version":"0.1.0","description":"Connect TextField-based commit-format fields to typed formatting and masks"}
