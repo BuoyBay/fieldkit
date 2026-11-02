@@ -1,4 +1,4 @@
-# Connect TextField-based commit-format fields to typed formatting and masks
+# TextField commit-format fields with typed masks
 
 Independent editing sessions and native TextField-based commit-format fields. Import `FieldKit`.
 Depends only on MaskKit 0.1.0; no FormatKit, TemporalKit or SettingsKit dependency.
