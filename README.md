@@ -1,6 +1,6 @@
-# Connect native fields to typed formatting and masks
+# Connect TextField-based commit-format fields to typed formatting and masks
 
-Independent editing sessions and native commit-format fields. Import `FieldKit`.
+Independent editing sessions and native TextField-based commit-format fields. Import `FieldKit`.
 Depends only on MaskKit 0.1.0; no FormatKit, TemporalKit or SettingsKit dependency.
 Canonical values are serialized strings; numeric/temporal adapters belong to callers.
 
@@ -52,7 +52,6 @@ On your own machine, install Buoy and run:
 buoy ai init --both
 ```
 
-The generated agent files and editor settings stay local and are ignored by Git.
 
 ## Contributing
 

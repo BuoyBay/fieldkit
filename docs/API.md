@@ -76,15 +76,7 @@ No optional slots, repetitions or Xojo case/placeholder directives. There is no
 Xojo translator: interpreting overlapping grammar without a full compatibility
 contract would silently alter input semantics.
 
-Maintainers run the private validation suite before release. See the repository README for public build instructions.
-
 Pattern token recognition is case sensitive, including literal lowercase `a`.
 For example, `Data ##` with raw `12` displays `Data 12` and stores only `12`.
 Native controls require the UI thread; pure editing instances are unsynchronized
 and must each be confined to one thread.
-
-## Verification scope
-
-
-Maintainers run the private validation suite before release. See the repository README for public build instructions.
-
